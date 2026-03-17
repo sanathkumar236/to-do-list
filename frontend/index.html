@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Premium Habit Tracker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body id="body" class="bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 text-white min-h-screen flex transition-all duration-500">
+
+<aside class="w-64 bg-white/10 backdrop-blur-xl border-r border-white/10 p-6 flex flex-col">
+  <h2 class="text-2xl font-bold mb-8 text-indigo-400">⚡ Tracker</h2>
+  <nav class="space-y-3">
+    <div class="p-2 rounded-lg bg-indigo-500/20">📅 Daily</div>
+    <div onclick="showAnalytics()" class="p-2 rounded-lg hover:bg-white/10 cursor-pointer">📊 Analytics</div>
+  </nav>
+  <button onclick="toggleTheme()" class="mt-auto bg-white/10 p-2 rounded">🎨 Theme</button>
+</aside>
+
+<main class="flex-1 p-8">
+<h1 class="text-3xl font-bold mb-6">Habit Dashboard</h1>
+
+<div class="grid grid-cols-3 gap-6 mb-8">
+  <div class="bg-white/10 p-6 rounded-2xl"><p>Today</p><p id="todayScore" class="text-3xl">0%</p></div>
+  <div class="bg-white/10 p-6 rounded-2xl"><p>Weekly</p><p id="weekScore" class="text-3xl">0%</p></div>
+  <div class="bg-white/10 p-6 rounded-2xl"><p>Monthly</p><p id="monthScore" class="text-3xl">0%</p></div>
+</div>
+
+<div class="flex gap-3 mb-6">
+  <input id="habitInput" placeholder="Add habit" class="flex-1 p-3 rounded bg-white/10">
+  <button onclick="addHabit()" class="bg-indigo-500 px-6 rounded">Add</button>
+</div>
+
+<div id="habitList" class="space-y-3"></div>
+</main>
+
+<!-- Analytics -->
+<div id="analyticsModal" class="fixed inset-0 bg-black/60 hidden items-center justify-center">
+  <div class="bg-white text-black p-6 rounded-xl w-[500px] space-y-4 animate-fadeIn">
+    <h2 class="text-xl font-bold">📊 Analytics</h2>
+    <canvas id="chart"></canvas>
+
+    <h3 class="font-semibold">🔥 Heatmap</h3>
+    <div id="heatmap" class="grid grid-cols-7 gap-1"></div>
+
+    <button onclick="closeAnalytics()" class="bg-indigo-500 text-white px-4 py-2 rounded">Close</button>
+  </div>
+</div>
+
+<style>
+@keyframes fadeIn { from{opacity:0; transform:scale(0.9);} to{opacity:1; transform:scale(1);} }
+.animate-fadeIn{ animation:fadeIn 0.3s ease; }
+.heat-0{background:#eee}
+.heat-1{background:#86efac}
+.heat-2{background:#22c55e}
+</style>
+
+<script>
+let habits = JSON.parse(localStorage.getItem('habits')) || [];
+let chart;
+
+function today(){ return new Date().toISOString().split('T')[0]; }
+function save(){ localStorage.setItem('habits', JSON.stringify(habits)); }
+
+function addHabit(){
+  const text = habitInput.value.trim();
+  if(!text) return;
+  habits.push({text, history:{}});
+  habitInput.value='';
+  save(); render();
+}
+
+function toggleHabit(i){
+  const t = today();
+  habits[i].history[t] = !habits[i].history[t];
+  save(); render();
+}
+
+function render(){
+  const list = document.getElementById('habitList');
+  list.innerHTML='';
+
+  habits.forEach((h,i)=>{
+    const checked = h.history[today()] ? 'checked' : '';
+    list.innerHTML += `<div class='bg-white/10 p-3 rounded flex justify-between hover:scale-[1.02] transition'>
+      <div><input type='checkbox' ${checked} onclick='toggleHabit(${i})'> ${h.text}</div>
+    </div>`;
+  });
+
+  updateStats();
+}
+
+function getStats(){
+  let todayDone=0,total=habits.length;
+  habits.forEach(h=>{ if(h.history[today()]) todayDone++; });
+
+  let weekDone=0,weekTotal=0;
+  for(let d=0;d<7;d++){
+    let date=new Date(); date.setDate(date.getDate()-d);
+    let key=date.toISOString().split('T')[0];
+    habits.forEach(h=>{ if(h.history[key]) weekDone++; weekTotal++; });
+  }
+
+  let monthDone=0,monthTotal=0;
+  for(let d=0;d<30;d++){
+    let date=new Date(); date.setDate(date.getDate()-d);
+    let key=date.toISOString().split('T')[0];
+    habits.forEach(h=>{ if(h.history[key]) monthDone++; monthTotal++; });
+  }
+
+  return {
+    today: total?Math.round((todayDone/total)*100):0,
+    week: weekTotal?Math.round((weekDone/weekTotal)*100):0,
+    month: monthTotal?Math.round((monthDone/monthTotal)*100):0
+  };
+}
+
+function updateStats(){
+  const s=getStats();
+  todayScore.innerText=s.today+"%";
+  weekScore.innerText=s.week+"%";
+  monthScore.innerText=s.month+"%";
+}
+
+function showAnalytics(){
+  analyticsModal.classList.remove('hidden');
+  const s=getStats();
+
+  if(chart) chart.destroy();
+  chart=new Chart(document.getElementById('chart'),{
+    type:'bar',
+    data:{labels:['Today','Week','Month'],datasets:[{data:[s.today,s.week,s.month]}]},
+    options:{animation:{duration:1000}}
+  });
+
+  renderHeatmap();
+}
+
+function renderHeatmap(){
+  const heat=document.getElementById('heatmap');
+  heat.innerHTML='';
+
+  for(let d=29;d>=0;d--){
+    let date=new Date(); date.setDate(date.getDate()-d);
+    let key=date.toISOString().split('T')[0];
+
+    let count=0;
+    habits.forEach(h=>{ if(h.history[key]) count++; });
+
+    let level = count===0?0:(count<2?1:2);
+
+    const cell=document.createElement('div');
+    cell.className=`w-4 h-4 rounded heat-${level}`;
+    cell.style.opacity=0;
+
+    heat.appendChild(cell);
+
+    setTimeout(()=>{ cell.style.opacity=1; }, (30-d)*20);
+  }
+}
+
+function closeAnalytics(){ analyticsModal.classList.add('hidden'); }
+
+function toggleTheme(){
+  const body=document.getElementById('body');
+  if(body.classList.contains('bg-white')){
+    body.className='bg-gradient-to-br from-slate-900 via-indigo-900 to-slate-900 text-white min-h-screen flex transition-all duration-500';
+  } else {
+    body.className='bg-white text-black min-h-screen flex transition-all duration-500';
+  }
+}
+
+render();
+</script>
+
+</body>
+</html>
